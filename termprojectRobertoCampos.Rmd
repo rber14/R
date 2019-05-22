@@ -1,0 +1,387 @@
+---
+title: "Term Project Spring 2019"
+author: "Roberto Campos"
+date: "5/16/2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Download the data used here: [UW Madsion keggle data](https://www.kaggle.com/Madgrades/uw-madison-courses)
+
+##Introduction
+A breif data analysis was conducted for a final term project for the course: **Stats 128** 
+An introductory course to statistical computing utilizing R, in which basic methods where shown to manipulate data and solve a range problems. Multiple packages such as RSQLite, ggplot2, and dplyr where used to facilitate the analysis. The answers to the the following questions where left to the unique interpretation of each student.
+
+1. Calculate the average of the course grades assigned.
+
+2. Are there any courses, sections or subjects that stand out as having the lowest average gpa or the highest average gpa?
+
+3. Do the grades given by individual instructors seem to stay the same over time or do they have any type of trend over time? If there is a trend, is it consistent across instructors or does in vary among instructors?
+
+4. Which 5 subject areas had the most professors in 2017? Pick a subject area with many professors. Scrape data on the professors’ ratings from ratemyprofessor.com and determine if these ratings have any correlation with the overall average gpa assigned by the professor over a reasonable time period.
+
+5. Construct an interesting data visualization from this dataset. What interesting finding emerges from your graph?
+
+
+<hr> </hr>
+
+### *Packages Used*
+* library(ggplot2)
+* library(rvest)
+* library(gridExtra)
+* library(dplyr)
+* library(RSQLite)
+
+```{r,include=FALSE}
+library(readr)
+library(ggplot2)
+library(rvest)
+library(gridExtra)
+library(dplyr)
+library(RSQLite)
+```
+
+
+```{r files, include=FALSE}
+course_offerings <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/course_offerings.csv")
+courses <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/courses.csv")
+grade_distributions <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/grade_distributions.csv")
+instructors <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/instructors.csv")
+rooms <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/rooms.csv")
+schedules <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/schedules.csv")
+sections <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/sections.csv")
+subject_memberships <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/subject_memberships.csv")
+subjects <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/subjects.csv")
+teachings <- read_csv("/Users/robertocampos/Downloads/uw-madison-courses/teachings.csv")
+yearCodes <- read_csv("/Users/robertocampos/Documents/yearCodes (Autosaved).csv")
+```
+
+<hr> </hr>
+
+Connect UW data to SQLite:
+```{r SQLite(), echo=TRUE}
+uwMadison = dbConnect(drv = SQLite(), dbname = "/Users/robertocampos/Downloads/uw-madison-courses/database.sqlite3")
+
+dbListTables(uwMadison)
+```
+
+#1)
+The course grades where calculating by using the following formula: **4.0 * a_count + 3.5 * ab_count + 3.0 * b_count + 2.5 * bc_count + 2 * c_count + 1 * d_count) / (a_count + ab_count + b_count + bc_count + c_count + d_count + f_count**. Non-letter grades such as 'nr' and 'cr' where discarded. Only A - F letter grades where taken into consideration. 
+
+Note: The total number of grades given is calculated and added to the data frame by using the following formula: **(a_count + ab_count + b_count + bc_count + c_count + d_count + f_count)**
+
+```{r grade_distributions, echo=TRUE}
+grade_distributions = mutate(grade_distributions, average = ((4.0 * a_count + 3.5 * ab_count + 3.0 * b_count + 2.5 * bc_count + 2 * c_count + 1 * d_count) / (a_count + ab_count + b_count + bc_count + c_count + d_count + f_count)), TotGradGiven = (a_count + ab_count + b_count + bc_count + c_count + d_count + f_count))
+
+head(grade_distributions$average)
+```
+
+#2)
+Many of the grades averages over 3.8 correspond to indepedent study courses or seminars which hurt the overall quality of analysis for this specific problem. Despite the issue mentioned above Air Force Aerospace Studies, African Languages, Literature, Art, and General Business where amongst the subjects with the highest GPA. 
+
+**Note:** Clearing the data set from all semiars and independent study courses may improve the ability to further analyze this specific question. 
+
+
+```{r part 2 , echo=FALSE}
+subcodeWithGrades2 = merge(grade_distributions, subject_memberships, by.x = "course_offering_uuid", by.y = "course_offering_uuid")
+subcodeWithGrades2 = na.omit(subcodeWithGrades2)
+
+sub_grade_average2 = merge(subcodeWithGrades2, subjects, by.x = "subject_code", by.y = "code")
+
+courses_off = dbGetQuery(uwMadison, "SELECT course_offerings.uuid as uuid, courses.name, course_offerings.term_code FROM courses, course_offerings WHERE courses.uuid = course_offerings.course_uuid")
+
+courses_off_byTerm = dbGetQuery(uwMadison, "SELECT course_offerings.uuid as course_offering_uuid, courses.name as courses, course_offerings.term_code FROM courses, course_offerings WHERE courses.uuid = course_offerings.course_uuid AND courses.name = course_offerings.name ORDER BY course_offerings.term_code DESC")
+
+problemB2 = inner_join(sub_grade_average2, courses_off_byTerm, by = "course_offering_uuid" )
+
+
+names(problemB2)[6] = "subjects"
+
+problemB2 = problemB2[-c(which(problemB2$average == 0)),]
+problemB2= problemB2[-c(which(problemB2$TotGradGiven == 1)),]
+problemB2 = problemB2[-c(which(problemB2$TotGradGiven == 2)),]
+problemB2 = problemB2[-c(which(problemB2$TotGradGiven == 3)),]
+problemB2 = problemB2[-c(which(problemB2$TotGradGiven == 4)),]
+problemB2 = problemB2[-c(which(problemB2$TotGradGiven == 5)),]
+
+
+```
+
+```{r showthis, echo=TRUE}
+head(problemB2)
+head(filter(problemB2, average >= 3.8))
+head(filter(problemB2, average <=2.0))
+```
+
+
+#3)
+Three professors that had a decent amount of time in the university where chosen in order to observe grade trends relevent to the extend of time professors teach. Eugenia, a Trigonometry professor, number displays that there is a drop over time if you compare 2014 Fall vs. 2017 Fall grades. Check the graph out for your self. Marcus, a professor Neuroscience professor, does display another trend that can be further analyzed. Do students average better grades in the Fall, then they do in the Spring? Marcus's graph displayed a slight visual difference between the average grades of classes taught in the Fall vs. Spring. 
+
+```{r prob3, echo=FALSE}
+instr_teach = dbGetQuery(uwMadison, "SELECT teachings.section_uuid, instructors.id, instructors.name FROM instructors, teachings WHERE instructors.id = teachings.instructor_id ")
+
+instr_teach_sections = merge(instr_teach, sections, by.x = "section_uuid", by.y = "uuid")
+
+names(grade_distributions)[2]<-"number"
+instr_teach_section_averg_grades = merge(instr_teach_sections, grade_distributions, by = c("course_offering_uuid","number"))
+instr_teach_section_averg_grades = na.omit(instr_teach_section_averg_grades)
+
+
+instr_teach_section_averg_grades_with_term = merge(courses_off_byTerm, instr_teach_section_averg_grades, by.x ="course_offering_uuid", by.y = "course_offering_uuid")
+head(instr_teach_section_averg_grades_with_term)
+
+subjects_name = merge(subjects,subject_memberships, by.x = 'code', by.y = 'subject_code')
+
+instr_teach_section_averg_grades_with_term_subject = merge(instr_teach_section_averg_grades_with_term, subjects_name, by.x = 'course_offering_uuid', by.y = 'course_offering_uuid')
+
+
+paul_math = subset(instr_teach_section_averg_grades_with_term_subject, name.x == 'PAUL M TERWILLIGER', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code'))
+eugenia_math =  subset(instr_teach_section_averg_grades_with_term_subject, name.x == 'EUGENIA MALITSKY', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code'))
+jon_engl = subset(instr_teach_section_averg_grades_with_term_subject, name.x == 'JON MC KENZIE', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code'))
+mary_engl =  subset(instr_teach_section_averg_grades_with_term_subject, name.x == 'MARY WANG', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code'))
+marcus_nuero = subset(instr_teach_section_averg_grades_with_term_subject, name.x == 'MARCUS CHACON', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code'))
+
+
+eugenia_math_years = merge(yearCodes, eugenia_math, by.x = "term_code", by.y = "term_code")
+jon_engl_years = merge(yearCodes, jon_engl, by.x = "term_code", by.y = "term_code")
+mary_engl_years = merge(yearCodes, mary_engl, by.x = "term_code", by.y = "term_code")
+marcus_nuero_years = merge(yearCodes, marcus_nuero, by.x = "term_code", by.y = "term_code")
+
+
+
+
+eugenia_math_years_trig =  subset(eugenia_math_years, courses == 'Trigonometry', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+eugenia_math_years_trig_fall = subset(eugenia_math_years_trig, term == 'Fall', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+eugenia_math_years_trig_spring = subset(eugenia_math_years_trig, term == 'Spring', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+
+plot_eugenia_fall= ggplot(eugenia_math_years_trig_fall, aes(x = eugenia_math_years_trig_fall$CalendarYear, y = eugenia_math_years_trig_fall$average)) + labs(x="year", y="average") + ggtitle("Trigonometry: Eugenia Fall 14-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+plot_eugenia_spring= ggplot(eugenia_math_years_trig_spring, aes(x = eugenia_math_years_trig_spring$CalendarYear, y = eugenia_math_years_trig_spring$average)) + labs(x="year", y="average") + ggtitle("Trigonometry: Eugenia Spring 15-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+p1 = grid.arrange(plot_eugenia_fall, plot_eugenia_spring, ncol=2, nrow =1) 
+
+
+plot_eugenia = qplot(eugenia_math_years_trig$CalendarYear, eugenia_math_years_trig$average, data = eugenia_math_years_trig, colour = term ) + labs(x="Year", y="Average") + ggtitle("Trigonometry: Eugenia Fall/Spring") + theme(plot.title = element_text(hjust = 0.5))
+
+mean(eugenia_math_years_trig_fall$average)
+mean(eugenia_math_years_trig_spring$average)
+
+mary_engl_years_aca=  subset(mary_engl_years, courses == 'ESL: Academic Writing II', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+mary_engl_years_aca_fall = subset(mary_engl_years_aca, term == 'Fall', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+mary_engl_years_aca_spring = subset(mary_engl_years_aca, term == 'Spring', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+
+plot_mary_fall= ggplot(mary_engl_years_aca_fall, aes(x = mary_engl_years_aca_fall$CalendarYear, y = mary_engl_years_aca_fall$average)) + labs(x="year", y="average") + ggtitle("ESL: Academic Writing II: Mary Fall  14-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+
+plot_mary_spring= ggplot(mary_engl_years_aca_spring, aes(x = mary_engl_years_aca_spring$CalendarYear, y = mary_engl_years_aca_spring$average)) + labs(x="year", y="average") + ggtitle("ESL: Academic Writing II: Mary Spring 14-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+
+p2 = grid.arrange(plot_mary_fall, plot_mary_spring, ncol=2, nrow =1) 
+
+
+plot_mary = qplot(mary_engl_years_aca$CalendarYear, mary_engl_years_aca$average, data = mary_engl_years_aca, colour = term ) + labs(x="Year", y="Average") + ggtitle("ESL: Academic Writing II: Mary Fall/Spring") + theme(plot.title = element_text(hjust = 0.5))
+
+mean(mary_engl_years_aca_fall$average)
+mean(mary_engl_years_aca_spring$average)
+
+
+marcus_nuero_years_clerk =  subset(marcus_nuero_years, courses == 'Neuroscience Core Clerkship', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+marcus_nuero_years_clerk_fall = subset(marcus_nuero_years_clerk, term == 'Fall', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+marcus_nuero_years_clerk_spring = subset(marcus_nuero_years_clerk, term == 'Spring', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+plot_marcus_fall= ggplot(marcus_nuero_years_clerk_fall, aes(x = marcus_nuero_years_clerk_fall$CalendarYear, y = marcus_nuero_years_clerk_fall$average)) + labs(x="year", y="average") + ggtitle("Neuroscience: Marcus Fall 12-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+
+plot_marcus_spring= ggplot(marcus_nuero_years_clerk_spring, aes(x = marcus_nuero_years_clerk_spring$CalendarYear, y = marcus_nuero_years_clerk_spring$average)) + labs(x="year", y="average") + ggtitle("Neuroscience: Marcus Spring 12-17")+ theme(plot.title = element_text(hjust = 0.5))+ geom_point()
+
+p3 = grid.arrange(plot_marcus_fall, plot_marcus_spring, ncol=2, nrow =1)
+
+plot_marcus = qplot(marcus_nuero_years_clerk$CalendarYear, marcus_nuero_years_clerk$average, data = marcus_nuero_years_clerk, colour = term ) + labs(x="Year", y="Average") + ggtitle("Neuroscience: Marcus Fall/Spring") + theme(plot.title = element_text(hjust = 0.5))
+
+mean(marcus_nuero_years_clerk_fall$average)
+mean(marcus_nuero_years_clerk_spring$average)
+
+```
+
+```{r teacherPlots, echo=TRUE}
+
+grid.arrange(p1,p2,p3, ncol=1, nrow = 4)
+grid.arrange(plot_eugenia, plot_mary, plot_marcus, ncol = 1, nrow = 3)
+```
+
+
+#4)
+Courses that had the most professors where Spanish at 74, Math at 66, Psychology at 65, English at 62, Music at 57, and History at 43. The topic Math was chosen to pick two professors. A professor with a GPA averge under 2.5 and the other with an average of over 3.5. Professors Thomas E. overall quality scores were for the most part 1 and the level of difficulty alternated between 4 and 5. His average GPA was 2.481. Professor Daniel E. had a very good overall quality scores all 5's. His level of difficulty score varied from 5 to 2. His average GPA was 3.69. Rate my professor confirmed the correlation with the overall average. 
+
+```{r, echo=FALSE}
+fall_spring_grades = merge(instr_teach_section_averg_grades_with_term_subject, yearCodes, by.x = 'term_code', by.y = 'term_code')
+head(fall_spring_grades)
+
+
+overall_fall_grades = subset(fall_spring_grades, term == 'Fall', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+overall_spring_grades = subset(fall_spring_grades, term == 'Spring', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+mean(overall_fall_grades$average)
+mean(overall_spring_grades$average)
+
+the_2017 = subset(fall_spring_grades, CalendarYear == 2017, select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(the_2017)
+mean(the_2017$average)
+
+spanish_2017 =  subset(the_2017, abbreviation == 'SPANISH', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(unique(spanish_2017$name.x))
+
+psych_2017 = subset(the_2017, abbreviation == 'PSYCH', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(unique(psych_2017$name.x))
+
+psych_2017 = psych_2017[-c( 9 , 12,  13  ,15,  17,  18 , 21  ,27,  30  ,37 , 44  ,46 , 47  ,53 , 56,  61 , 62,  64 , 68  ,74 , 76,  77,  86  ,90,  93  ,95 ,100, 102, 107
+   ,110, 111, 116, 118, 119 ,121 ,124, 126, 130 ,132 ,137 ,138), ]
+
+math_2017 = subset(the_2017, abbreviation == 'MATH', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+head(unique(math_2017$name.x))
+
+which(math_2017$courses == 'WES Calculus Supplement')
+which(math_2017$courses == 'Seminar in Topology')
+math_2017 = math_2017[-c(2,9, 15, 17 ,64, 76, 85, 91, 98),]
+head(math_2017)
+
+english_2017 = subset(the_2017, abbreviation == 'ENGL', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+
+head(unique(english_2017$name.x))
+
+which(english_2017$courses == 'Graduate Fiction Workshop')
+which(english_2017$courses == 'Graduate Poetry Workshop')
+english_2017 = english_2017[-c(2,62,53),]
+
+head(english_2017)
+
+music_2017 = subset(the_2017, abbreviation == 'MUSIC', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(unique(music_2017$name.x))
+
+which(music_2017$courses == 'Varsity Band')
+which(music_2017$courses == 'Music in Performance')
+music_2017 = music_2017[-c(33 ,40 ,44 ,46 ,47, 53 ,57,62 ,112 ,136 ,144 ,146 ,150 ,157 ,160 ,161, 6, 7,14,  37,  72,  82,  83,  85,  97, 102),]
+
+head(music_2017)
+
+history_2017 = subset(the_2017, abbreviation == 'HISTORY', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(unique(history_2017$name.x))
+
+which(history_2017$courses == 'Research Seminar in History')
+which(history_2017$courses == 'Seminar in Japanese History')
+
+history_2017 = history_2017[-c(44,62),]
+head(history_2017)
+```
+```{r scrap , echo = FALSE}
+thomas_edwards = subset(the_2017, name.x == 'THOMAS EDWARDS', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(thomas_edwards)
+
+webpage = read_html("https://www.ratemyprofessors.com/ShowRatings.jsp?tid=2285329")
+date_html = html_nodes(webpage, '.date')
+date = html_text(date_html)
+head(date)
+
+class_html = html_nodes(webpage, '.name .response')
+class = html_text(class_html)
+head(class)
+
+quality_html = html_nodes(webpage, '.poor')
+quality = html_text(quality_html)
+head(quality)
+
+difficulty_html = html_nodes(webpage, '.inverse')
+difficulty = html_text(difficulty_html)
+head(difficulty)
+
+
+d3 = data.frame(overallquality = quality)
+d4 = data.frame(levelofdifficulty = difficulty)
+
+thomasedvards_data = merge(d3, d4 , all = TRUE)
+
+
+
+
+
+daniel_erman = subset(the_2017, name.x == 'DANIEL ERMAN', select = c('name.x', 'abbreviation', 'courses', 'a_count', 'ab_count', 'b_count', 'bc_count', 'c_count', 'd_count', 'f_count', 'average', 'TotGradGiven', 'term_code', 'term', 'CalendarYear'))
+head(daniel_erman)
+
+webpage2 = read_html("https://www.ratemyprofessors.com/ShowRatings.jsp?tid=1852275")
+date_html2 = html_nodes(webpage2, '.date')
+date2 = html_text(date_html2)
+head(date2)
+
+class_html2 = html_nodes(webpage2, '.name .response')
+class2 = html_text(class_html2)
+head(class2)
+
+quality_html2 = html_nodes(webpage2, '.break:nth-child(1) .good')
+quality2 = html_text(quality_html2)
+head(quality2)
+
+difficulty_html2 = html_nodes(webpage2, '.inverse')
+difficulty2 = html_text(difficulty_html2)
+head(difficulty2)
+
+danielerman_data = data.frame(date = date2, class = class2, overallquality = quality2, levelofdifficulty = difficulty2 )
+```
+
+```{r showscrape, echo=TRUE}
+head(thomasedvards_data)
+head(danielerman_data)
+```
+
+#5)
+Continuing with question 4, each class with the most professors in 2017 was further analyzed. The overall average was diplayed in a visual graph color coded by term. What is clearly evident is that the average is significantly better during the Fall semesters. 
+
+**Note:** For question three Marcus's visual graph also displayed similar findings.
+
+```{r 2017plots, echo=FALSE}
+s1 = ggplot(spanish_2017, aes(x = average, fill = term, color = term)) + geom_histogram(alpha = .5) + ggtitle("Spanish 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+s2 = qplot(spanish_2017$courses, spanish_2017$average, data = spanish_2017, colour = term) + labs(x="Courses", y="Average")  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+ps1 = ggplot(psych_2017, aes(x = average, fill = term, color = term)) + geom_histogram(alpha = .5) + ggtitle("Psych 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+ps2 = qplot(psych_2017$courses, psych_2017$average, data = psych_2017, colour = term) + labs(x="Courses", y="Average")  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+m1 = ggplot(math_2017, aes(x=average,fill = term, color = term)) + geom_histogram(alpha = .5) + ggtitle("Math 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+m2 = qplot(math_2017$courses, math_2017$average, data = math_2017, colour = term) + labs(x="Courses", y="Average")  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+e1 = ggplot(english_2017, aes(x=average,fill = term, color = term)) + geom_histogram(alpha = .5)+ ggtitle("English 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+e2 = qplot(english_2017$courses, english_2017$average, data = english_2017, colour = term) + labs(x="Courses", y="Average")  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+mu1 = ggplot(music_2017, aes(x=average,fill = term, color = term)) + geom_histogram(alpha = .5)  + ggtitle("Music 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+mu2 = qplot(music_2017$courses, music_2017$average, data = music_2017, colour = term) + labs(x="Courses", y="Average") + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+h1 = ggplot(history_2017, aes(x=average,fill = term, color = term)) + geom_histogram(alpha = .5) + ggtitle("History 2017") + theme(plot.title = element_text(hjust = 0.5))
+
+h2 = qplot(history_2017$courses, history_2017$average, data = history_2017, colour = term) + labs(x="Courses", y="Average") + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+```{r showplots, echo=TRUE, warning=FALSE}
+grid.arrange(s1, s2, ncol=1, nrow = 2)
+grid.arrange(ps1,ps2, ncol=1, nrow = 2)
+grid.arrange(m1,m2, ncol=1, nrow = 2)
+grid.arrange(e1,e2, ncol=1, nrow = 2)
+grid.arrange(mu1, mu2, ncol=1, nrow = 2)
+grid.arrange(h1,h2, ncol=1, nrow = 2)
+```
+
+```{r disconnectsql , echo=TRUE}
+dbDisconnect(uwMadison)
+```
+
+#Conclusion
+
+While it's a very superficial analysis, further action can be taken to completly analyze the data and come into a concrete answer. It can be seen that there is a slight GPA drop over the years shown in Eugenia's graph but in order to fully come into a conclusion more professors have to be analyzed individually. A very critical finding was initiated by the observation made through Marcus's visual graph. Do student's perform better during the Fall semester? This led me to further analyze individual subjects by term. It can be seen that GPA is significantly greater during the Fall, for each of those subjects chosen. If you don't ever want to worry about any of this I recommmend choosing Music as your major. It seems Music has the best GPA in the game. Well, atleast at UW Madison for the year 2017.  
